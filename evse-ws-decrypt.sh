@@ -1,11 +1,15 @@
 #!/bin/bash
-fn=$1
+sfn=$1
 shift
-[[ ! -f "$fn" ]] && exit 1
+kfn=$1
+shift
+[[ ! -f "$sfn" ]] && exit 1
+[[ ! -f "$kfn" ]] && exit 1
 websocket_lua_script_file=$(dirname $(readlink -f $BASH_SOURCE))/ws.lua
-tshark -r "$fn" -2 -R \
+tshark -r "$sfn" -2 -R \
     'tcp and (not tcp.len==0) and (websocket || http)' \
-    -Xlua_script:$websocket_lua_script_file \
+    -X lua_script1:$(cat "$kfn") \
+    -X lua_script:$websocket_lua_script_file \
     -T fields \
     -E occurrence=l \
     -E separator=/t \
