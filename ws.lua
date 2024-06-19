@@ -2,11 +2,6 @@ require "bit32"
 require "string"
 
 local args = { ... }
-if #args == 0 then
-    print("Need 1 argument: XOR key")
-    return
-end
-
 local tbl_xor_key = args[1]
 local function xorf(data)
 	local l = data:len()
@@ -32,14 +27,13 @@ end
 local function to_hex(data)
     local char, sh, i
 	local d = {}
-    for i = 1, #data do
+    for i = 1, data:len() do
         char = string.sub(data, i, i)
         sh = string.format("%02x", string.byte(char))
         table.insert(d, sh)
     end
 	return table.concat(d, "")
 end
-
 
 
 local bcencrypt = Proto("bcencrypt", "Websocket OCPP1.6J bcencrypt")
@@ -61,14 +55,18 @@ local function do_ws_bcencrypt(tvb, pinfo, root)
     subtree:add(f_data_a, tvb())
     subtree:add(f_data_h, to_hex(tvb:raw()))
 
-	local k,l = pcall(xorf, tvb)
-    if k == false then
-	    print(k,l)
+    if not(tbl_xor_key == nil or tbl_xor_key:len() == 0) then
+        local k,l = pcall(xorf, tvb)
+        if k == false then
+            print(k,l)
+        end
+        --print(xorf(tvb))
+        local da = xorf(tvb())
+        --print("STR:"..da)
+        subtree:add(f_command, da)
+    else
+        --print("STR:"..da)
     end
-    --print(xorf(tvb))
-	local da = xorf(tvb())
-	--print("STR:"..da)
-  	subtree:add(f_command, da)
 	
 	--print("END")
     return
