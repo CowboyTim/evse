@@ -27,14 +27,17 @@ die usage() unless @p;
 #
 # See also the OCPP 1.6j standard. Note that this expects the uniqueRequestId to be 1 byte (here: 5).
 #
+my $msg_nr = 0;
 my $msg;
 foreach my $data (@p){
     print STDERR $data =~ s/(.)/sprintf("%02X",ord($1))/gesmr, "\n";
     $msg //= $data if length($data) == 124;
+    last if $msg;
+    $msg_nr++;
 }
 
 # find the XOR key
-print STDERR "MSG[".length($msg)."]:$msg\n";
+print STDERR "MSG[L:".length($msg).",N:$msg_nr]:$msg\n";
 my $s_key8 = get_key($msg, [
     [  0, '['],
     [  1, '2'],
