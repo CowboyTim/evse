@@ -25,45 +25,65 @@ die usage() unless @p;
 #
 #   [2,"5","StatusNotification",{"connectorId":1,"status":"Available","errorCode":"NoError","timestamp":"2024-06-11T12:49:42Z"}]
 #
-# See also the OCPP 1.6j standard. Note that this expects the uniqueRequestId to be 1 byte (here: 5).
+# Or for 265 bytes, like this:
+#   [2,"1","BootNotification",{"chargePointVendor":...]
+#
+# In theory, we can even pick the first 20 bytes and try multiple messages, the
+# BootNotification message is the first one, but can be of variable length so
+# we can't catch it because of a fixed size.
+#
+# See also the OCPP 1.6j standard. Note that this expects the
+# uniqueRequestId to be 1 byte (here: 5).
+#
 #
 my $msg_nr = 0;
 my $msg;
 foreach my $data (@p){
     print STDERR $data =~ s/(.)/sprintf("%02X",ord($1))/gesmr, "\n";
-    $msg //= $data if length($data) == 124;
+    $msg //= $data if length($data) == 265;
     last if $msg;
     $msg_nr++;
 }
 
+my $i=0;
+my $boot_msg = [map {[$i++,$_]} split //, '[2,"1","BootNotifica'];
+
+my $sz_msg_decode_map = {
+    124 => [
+        [  0, '['],
+        [  1, '2'],
+        [  2, ','],
+        [  3, '"'],
+
+        [ 24, 'o'],
+        [ 25, 'n'],
+        [ 26, '"'],
+        [ 27, ','],
+
+        [-16, '-'],
+        [  9, 't'],
+        [ 10, 'a'],
+        [-13, 'T'],
+
+        [ 12, 'u'],
+        [ 13, 's'],
+        [ 14, 'N'],
+        [ 15, 'o'],
+
+        [ 16, 't'],
+        [ 17, 'i'],
+        [ 18, 'f'],
+        [ 19, 'i'],
+    ],
+    265 => $boot_msg,
+    20  => $boot_msg,
+};
+
 # find the XOR key
 print STDERR "MSG[L:".length($msg).",N:$msg_nr]:$msg\n";
-my $s_key8 = get_key($msg, [
-    [  0, '['],
-    [  1, '2'],
-    [  2, ','],
-    [  3, '"'],
-
-    [ 24, 'o'],
-    [ 25, 'n'],
-    [ 26, '"'],
-    [ 27, ','],
-
-    [-16, '-'],
-    [  9, 't'],
-    [ 10, 'a'],
-    [-13, 'T'],
-
-    [ 12, 'u'],
-    [ 13, 's'],
-    [ 14, 'N'],
-    [ 15, 'o'],
-
-    [ 16, 't'],
-    [ 17, 'i'],
-    [ 18, 'f'],
-    [ 19, 'i'],
-]);
+my $s_key8;
+$s_key8 //= get_key(substr($msg, 0, 20), $boot_msg);
+$s_key8 //= get_key($msg, $sz_msg_decode_map->{length($msg)});
 
 # list as output
 foreach my $m (@p){
