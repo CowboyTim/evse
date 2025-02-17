@@ -3,6 +3,9 @@
 use strict; use warnings;
 
 use JSON;
+use FindBin;
+
+my $where = $FindBin::Bin;
 
 # do we have a file?
 my $tcpdump_fn = shift @ARGV;
@@ -12,7 +15,8 @@ die usage() unless $tcpdump_fn and -e $tcpdump_fn;
 #
 #   -R '(tcp.stream eq 3 and websocket || http)'
 #
-open(my $t_fh, "tshark -r $tcpdump_fn -X lua_script:ws.lua -T fields -e bcencrypt.hex|")
+
+open(my $t_fh, "tshark -r $tcpdump_fn -X lua_script:$where/ws.lua -T fields -e bcencrypt.hex|")
     or die "Error opening tshark: $!\n";
 my @p;
 while(my $l = <$t_fh>){
