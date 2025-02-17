@@ -2,12 +2,14 @@
 
 use strict; use warnings;
 
+use JSON;
+
 # do we have a file?
 my $tcpdump_fn = shift @ARGV;
 die usage() unless $tcpdump_fn and -e $tcpdump_fn;
 
 # read in tcpdump streams, in hex
-open(my $t_fh, "tshark -r $tcpdump_fn -2 -R 'tcp.stream eq 3 and (websocket || http)' -X lua_script:ws.lua -T fields -e bcencrypt.hex|")
+open(my $t_fh, "tshark -r $tcpdump_fn -2 -R '(websocket || http)' -X lua_script:ws.lua -T fields -e bcencrypt.hex|")
     or die "Error opening tshark: $!\n";
 my @p;
 while(my $l = <$t_fh>){
@@ -32,21 +34,48 @@ die usage() unless @p;
 # BootNotification message is the first one, but can be of variable length so
 # we can't catch it because of a fixed size.
 #
-# See also the OCPP 1.6j standard. Note that this expects the
-# uniqueRequestId to be 1 byte (here: 5).
+# Also note that the second array field is a uniqueRequestId, which is 1 byte,
+# and this changes, it's 1 at BootNotification, but if we want to check other
+# messages, we need to make that a bit more "strict"
 #
+# See also the OCPP 1.6j standard. Note that this expects the uniqueRequestId
+# to be 1 byte (here: 5).
 #
-my $msg_nr = 0;
+
 my $msg;
 foreach my $data (@p){
-    print STDERR $data =~ s/(.)/sprintf("%02X",ord($1))/gesmr, "\n";
-    $msg //= $data if length($data) == 265;
-    last if $msg;
-    $msg_nr++;
+    #print STDERR $data =~ s/(.)/sprintf("%02X",ord($1))/gesmr, "\n";
 }
+$msg = $_ for grep {length($_) > 250} @p;
 
-my $i=0;
-my $boot_msg = [map {[$i++,$_]} split //, '[2,"1","BootNotifica'];
+my $boot_msg = [
+    [  0, '['], # [2,"
+    [  1, '2'],
+    [  2, ','],
+    [  3, '"'],
+
+    [ 24, '"'], # ",{"
+    [ 25, ','],
+    [ 26, '{'],
+    [ 27, '"'],
+
+    [  8, 'B'], # Boot
+    [  9, 'o'],
+    [ 10, 'o'],
+    [ 11, 't'],
+
+    [ 12, 'N'], # Noti
+    [ 13, 'o'],
+    [ 14, 't'],
+    [ 15, 'i'],
+
+    [ 16, 'f'], # fica
+    [ 17, 'i'],
+    [ 18, 'c'],
+    [ 19, 'a'],
+
+
+];
 
 my $sz_msg_decode_map = {
     124 => [
@@ -76,14 +105,29 @@ my $sz_msg_decode_map = {
         [ 19, 'i'],
     ],
     265 => $boot_msg,
-    20  => $boot_msg,
+    28  => $boot_msg,
 };
 
 # find the XOR key
-print STDERR "MSG[L:".length($msg).",N:$msg_nr]:$msg\n";
+print STDERR "MSG[L:".length($msg)."]:".($msg =~ s/./sprintf("%02X",ord($&))/gesmr)."\n";
 my $s_key8;
-$s_key8 //= get_key(substr($msg, 0, 20), $boot_msg);
 $s_key8 //= get_key($msg, $sz_msg_decode_map->{length($msg)});
+my $decoded_msg;
+my $err;
+REDO:
+    eval {
+        die "No key found\n" unless $s_key8;
+        $decoded_msg = xor_msg($s_key8, $msg);
+        my $j_msg = JSON::decode_json($decoded_msg);
+        print STDERR "DECODED: $decoded_msg\n";
+    };
+    if($@){
+        print STDERR "ERROR: $@".(defined $decoded_msg?",DECODED MSG: $decoded_msg\n":"\n");
+        $s_key8 = get_key(substr($msg, 0, 28), $boot_msg);
+        $err = $@;
+        goto REDO if $@ and !$err;
+        die $@;
+    }
 
 # list as output
 foreach my $m (@p){
@@ -104,12 +148,15 @@ sub usage {
 sub bb {
     my ($w, $n, $what) = @_;
     my $k7;
+    return unless $n <= length($w);
     my $t = substr($w, $n, 1);
+    return unless defined $t;
     my $v = $t =~ s/./sprintf("%02X ",ord($&))/gesmr;
     #print "T: $v\n";
     my $r = unpack("C", $t);
     foreach my $k (0 .. 255){
-        if(chr($r^$k) eq $what){
+        my $d = $r^$k;
+        if(defined $d and chr($d) eq $what){
             #print "K7: $k(".sprintf("0x%02X",$k)."): ".($r^$k).": ".chr($r^$k)."\n";
             $k7 = $k;
             last
@@ -127,11 +174,16 @@ sub get_key {
     return pack("C*",@kk);
 }
 
+sub xor_msg {
+    my ($k, $m) = @_;
+    my $fs_key8 = substr(($s_key8) x (int(length($m)/length($s_key8))+1), 0, length($m));
+    return $m ^ $fs_key8;
+}
+
 sub pr {
     my ($m, $s_key8) = @_;
     my $fs_key8 = substr(($s_key8) x (int(length($m)/length($s_key8))+1), 0, length($m));
     print STDERR sprintf("%8s: %s\n", "K8",((($fs_key8 =~ s/\W/./gsmr))));
-    #print STDERR "H8     : ".((($fs_key8 =~ s/./sprintf("%02X", unpack("C", $&))/gesmr)))."\n";
     print STDERR sprintf("%8s: %s\n", "U8[".length($m)."]", (($m ^ $fs_key8) =~ s/[^A-Za-z0-9_\-\"\{\}\[\],\.:]/./grms));
 }
 
