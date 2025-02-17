@@ -154,29 +154,25 @@ sub usage {
 
 sub bb {
     my ($w, $n, $what) = @_;
-    my $k7;
-    return unless $n <= length($w);
+    return if $n > length($w);
     my $t = substr($w, $n, 1);
-    return unless defined $t;
-    my $v = $t =~ s/./sprintf("%02X ",ord($&))/gesmr;
-    #print "T: $v\n";
+    return unless defined $t and length($t);
     my $r = unpack("C", $t);
     foreach my $k (0 .. 255){
         my $d = $r^$k;
         if(defined $d and chr($d) eq $what){
-            #print "K7: $k(".sprintf("0x%02X",$k)."): ".($r^$k).": ".chr($r^$k)."\n";
-            $k7 = $k;
+            return $k;
             last
         }
     }
-    return $k7
+    return;
 }
 
 sub get_key {
     my ($w, $km) = @_;
     my @kk;
     foreach my $kt (@$km){
-        push @kk, bb($w,   $kt->[0], $kt->[1]);
+        push @kk, bb($w, $kt->[0], $kt->[1]);
     }
     return pack("C*",@kk);
 }
