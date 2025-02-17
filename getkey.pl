@@ -53,7 +53,7 @@ my $msg;
 foreach my $data (@p){
     #print STDERR $data =~ s/(.)/sprintf("%02X",ord($1))/gesmr, "\n";
 }
-$msg = $_ for grep {length($_) > 250} @p;
+$msg = $_ for grep {length($_) == 265} @p;
 
 my $boot_msg = [
     [  0, '['], # [2,"
@@ -80,11 +80,38 @@ my $boot_msg = [
     [ 17, 'i'],
     [ 18, 'c'],
     [ 19, 'a'],
-
-
 ];
 
 my $sz_msg_decode_map = {
+    22 => [
+        [  0, '['],
+        [  1, '2'],
+        [  2, ','],
+        [  3, '"'],
+
+        [-18, '4'],
+        [-17, '"'],
+
+        [-16, ','],
+        [-15, '"'],
+        [-14, 'H'],
+        [-13, 'e'],
+
+        [-12, 'a'],
+        [-11, 'r'],
+        [-10, 't'],
+        [ -9, 'b'],
+
+        [ -8, 'e'],
+        [ -7, 'a'],
+        [ -6, 't'],
+        [ -5, '"'],
+
+        [ -4, ','],
+        [ -3, '{'],
+        [ -2, '}'],
+        [ -1, ']'],
+    ],
     124 => [
         [  0, '['],
         [  1, '2'],
@@ -154,8 +181,9 @@ sub usage {
 
 sub bb {
     my ($w, $n, $what) = @_;
-    return if $n > length($w);
+    return if abs($n) > length($w);
     my $t = substr($w, $n, 1);
+    print STDERR "W: >>$w<< ->T\[$n\]: $t\n";
     return unless defined $t and length($t);
     my $r = unpack("C", $t);
     foreach my $k (0 .. 255){
@@ -171,8 +199,18 @@ sub bb {
 sub get_key {
     my ($w, $km) = @_;
     my @kk;
+    my $l = length($w);
     foreach my $kt (@$km){
-        push @kk, bb($w, $kt->[0], $kt->[1]);
+        my $i = $l;
+        if($kt->[0] < 0){
+            $i += $kt->[0];
+        } else {
+            $i  = $kt->[0];
+        }
+        $i %= 20;
+        print STDERR "I: $i\n";
+
+        $kk[$i] //= bb($w, $kt->[0], $kt->[1]);
     }
     return pack("C*",@kk);
 }
