@@ -8,8 +8,11 @@ use JSON;
 my $tcpdump_fn = shift @ARGV;
 die usage() unless $tcpdump_fn and -e $tcpdump_fn;
 
-# read in tcpdump streams, in hex
-open(my $t_fh, "tshark -r $tcpdump_fn -2 -R '(websocket || http)' -X lua_script:ws.lua -T fields -e bcencrypt.hex|")
+# read in tcpdump streams, in hex, add extra filters if needed:
+#
+#   -R '(tcp.stream eq 3 and websocket || http)'
+#
+open(my $t_fh, "tshark -r $tcpdump_fn -X lua_script:ws.lua -T fields -e bcencrypt.hex|")
     or die "Error opening tshark: $!\n";
 my @p;
 while(my $l = <$t_fh>){
