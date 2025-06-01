@@ -4,11 +4,15 @@
 - [libjson-perl](https://metacpan.org/pod/JSON)
 - [tcpdump](https://www.tcpdump.org/)
 - [wireshark](https://www.wireshark.org/)
+- [awk](https://www.gnu.org/software/gawk/)
+- [bash](https://www.gnu.org/software/bash/)
+- [jq](https://stedolan.github.io/jq/)
+- [lua](https://www.lua.org/)
 
 Install on linux mint:
 
 ```
-sudo apt install perl libjson-perl tcpdump wireshark
+sudo apt install perl libjson-perl tcpdump wireshark gawk bash jq lua5.3
 ```
 
 ## create tcpdump file
