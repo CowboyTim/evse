@@ -5,7 +5,8 @@ kfn=$1
 shift
 [[ ! -f "$sfn" ]] && exit 1
 [[ ! -f "$kfn" ]] && exit 1
-websocket_lua_script_file=$(dirname $(readlink -f $BASH_SOURCE))/ws.lua
+where=$(readlink -f ${BASH_SOURCE})
+websocket_lua_script_file=${where%/*}/ws.lua
 tshark -r "$sfn" -2 -R \
     'tcp and (not tcp.len==0) and (websocket || http)' \
     -X lua_script1:$(cat "$kfn") \
