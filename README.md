@@ -12,7 +12,7 @@
 Install on linux mint:
 
 ```
-sudo apt install perl libjson-perl tcpdump wireshark gawk bash jq lua5.3
+sudo apt install perl libjson-perl tcpdump wireshark tshark gawk bash jq lua5.3
 ```
 
 ## create tcpdump file
