@@ -33,15 +33,21 @@ use strict; use warnings;
 use JSON;
 use POSIX ();
 
+BEGIN {
+    $0 = "evse:ocpp_report";
+}
+
 $ENV{TZ} = 'GMT';
 POSIX::tzset();
 
 my $base_dir = shift @ARGV or die "Usage: $0 <base_dir>\n";
+my @ocpp_files = glob("$base_dir/snoop_blinkcharging_*.log");
+die "problem getting files from $base_dir: $!\n" if $!;
 
 # loop over the files, collect start/stop transactions
 my %start_requests;
 my %transactions;
-foreach my $file (glob("$base_dir/snoop_blinkcharging_*.log")){
+foreach my $file (@ocpp_files){
     open(my $fh, '<', $file)
         or do {warn "Could not open '$file': $!\n"; next;};
     while(my $line = <$fh>){
