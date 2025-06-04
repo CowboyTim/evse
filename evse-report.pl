@@ -74,35 +74,39 @@ foreach my $file (glob("$base_dir/snoop_blinkcharging_*.log")){
             $ev->{consumed_meter_value} = $consumed_value  if $consumed_value;
             $ev->{line}                 = $line;
 
+            my $tr_id = $message_data->{transactionId} // '';
+            my $ms_ts = $message_data->{timestamp} // '';
+
             # what we do with the message
             if($message_type ==2 and $message_name eq 'StartTransaction'){
-                $ev->{epoch_timestamp} = parse_date($message_data->{timestamp});
+                $ev->{epoch_timestamp} = parse_date($ms_ts);
                 if(!defined $ev->{epoch_timestamp}){
-                    warn "Failed to parse timestamp '$message_data->{timestamp}' in line: $line\n";
+                    warn "Failed to parse timestamp '$ms_ts' in line: $line\n";
                     next;
                 }
                 # Store the start transaction data
                 $start_requests{$message_id} //= $ocpp_message_json;
             }
-            elsif($message_type == 3 and $message_data->{transactionId}){
-                $transactions{$message_data->{transactionId}}{start} //= delete $start_requests{$message_id};
+            elsif($message_type == 3 and $tr_id){
+                $transactions{$tr_id}{start} //= delete $start_requests{$message_id};
             }
             elsif($message_type == 2 and $message_name eq 'StopTransaction'){
-                $ev->{epoch_timestamp} = parse_date($message_data->{timestamp});
+                $ev->{epoch_timestamp} = parse_date($ms_ts);
                 if(!defined $ev->{epoch_timestamp}){
-                    warn "Failed to parse timestamp '$message_data->{timestamp}' in line: $line\n";
+                    warn "Failed to parse timestamp '$ms_ts' in line: $line\n";
                     next;
                 }
                 # Update the stop transaction data
-                $transactions{$message_data->{transactionId}}{stop} //= $ocpp_message_json;
+                $transactions{$tr_id}{stop} //= $ocpp_message_json;
             }
             elsif($message_type == 2 and $message_name eq 'MeterValues'){
-                $ev->{epoch_timestamp} = parse_date($message_data->{meterValue}[0]{timestamp});
+                my $mv_ts = $message_data->{meterValue}[0]{timestamp} // '';
+                $ev->{epoch_timestamp} = parse_date($mv_ts);
                 if(!defined $ev->{epoch_timestamp}){
-                    warn "Failed to parse timestamp '$message_data->{timestamp}' in line: $line\n";
+                    warn "Failed to parse timestamp '$mv_ts' in line: $line\n";
                     next;
                 }
-                push @{$transactions{$message_data->{transactionId}}{meter_values}}, $ocpp_message_json;
+                push @{$transactions{$tr_id}{meter_values}}, $ocpp_message_json;
             }
         } else {
             warn "Line does not match expected format: $line\n";
