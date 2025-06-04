@@ -50,20 +50,22 @@ my %transactions;
 foreach my $file (@ocpp_files){
     open(my $fh, '<', $file)
         or do {warn "Could not open '$file': $!\n"; next;};
+    my $base_fn = $file =~ s/.*\/+//gr;
+    my $lf_info = "[$base_fn] ";
     while(my $line = <$fh>){
         chomp $line;
         print STDERR "LINE: $line\n" if $ENV{DEBUG};
         if($line =~ m/^(\[.*\])(?:,(.*?),(.*?))?$/){
             my $ocpp_message   = $1;
             unless(length($ocpp_message//'')){
-                warn "Empty OCPP message in line: $line\n";
+                warn "${lf_info}Empty OCPP message in line: $line\n";
                 next;
             }
             my $meter_value    = $2 // '';
             my $consumed_value = $3 // '';
             my $ocpp_message_json = eval {JSON::decode_json($ocpp_message)};
             if($@ or !$ocpp_message_json){
-                warn "Failed to decode JSON: $@ in line: $line\n";
+                warn "${lf_info}Failed to decode JSON: $@ in line: $line\n";
                 next;
             }
 
@@ -87,7 +89,7 @@ foreach my $file (@ocpp_files){
             if($message_type ==2 and $message_name eq 'StartTransaction'){
                 $ev->{epoch_timestamp} = parse_date($ms_ts);
                 if(!defined $ev->{epoch_timestamp}){
-                    warn "Failed to parse timestamp '$ms_ts' in line: $line\n";
+                    warn "${lf_info}Failed to parse timestamp '$ms_ts' in line: $line\n";
                     next;
                 }
                 # Store the start transaction data
@@ -99,7 +101,7 @@ foreach my $file (@ocpp_files){
             elsif($message_type == 2 and $message_name eq 'StopTransaction'){
                 $ev->{epoch_timestamp} = parse_date($ms_ts);
                 if(!defined $ev->{epoch_timestamp}){
-                    warn "Failed to parse timestamp '$ms_ts' in line: $line\n";
+                    warn "${lf_info}Failed to parse timestamp '$ms_ts' in line: $line\n";
                     next;
                 }
                 # Update the stop transaction data
@@ -109,13 +111,13 @@ foreach my $file (@ocpp_files){
                 my $mv_ts = $message_data->{meterValue}[0]{timestamp} // '';
                 $ev->{epoch_timestamp} = parse_date($mv_ts);
                 if(!defined $ev->{epoch_timestamp}){
-                    warn "Failed to parse timestamp '$mv_ts' in line: $line\n";
+                    warn "${lf_info}Failed to parse timestamp '$mv_ts' in line: $line\n";
                     next;
                 }
                 push @{$transactions{$tr_id}{meter_values}}, $ocpp_message_json;
             }
         } else {
-            warn "Line does not match expected format: $line\n";
+            warn "${lf_info}Line does not match expected format: $line\n";
         }
     }
     close($fh);
