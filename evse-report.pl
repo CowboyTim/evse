@@ -187,6 +187,6 @@ foreach my $c (@tr){
         $c->{stop}[3]{meterStop}      // 0,
         $ocpp_mv_consumed/1000,
         ($stop->{external_meter_value}//($mv[-1]//[])->[4]{external_meter_value}//0) - ($start->{external_meter_value}//0),
-        11.2222*($ch_time / 60 / 60),
+        10.2*($ch_time / 60 / 60),
     );
 }
