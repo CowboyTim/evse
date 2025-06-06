@@ -132,19 +132,19 @@ sub parse_date {
     return;
 }
 
-my @tr = (sort {($a->{stop}[4]{epoch_timestamp}//0) <=> ($b->{stop}[4]{epoch_timestamp}//0)}
-            grep {$_->{stop} and $_->{start}} values %transactions);
+my @tr = (sort {($a->{start}[4]{epoch_timestamp}//0) <=> ($b->{start}[4]{epoch_timestamp}//0)}
+            grep {$_->{start}} values %transactions);
 
 print STDERR JSON->new->canonical->encode(\@tr),"\n" if $ENV{DEBUG};
 
 foreach my $c (@tr){
     my $start = $c->{start}[4];
-    my $stop = $c->{stop}[4];
-    unless($start and $stop){
-        warn "Missing start or stop data in transaction: ",JSON->new->canonical->encode($c),"\n";
+    unless($start){
+        warn "Missing start data in transaction: ",JSON->new->canonical->encode($c),"\n";
         next;
     }
-    if(!$stop->{epoch_timestamp}){
+    my $stop = $c->{stop}[4];
+    if($stop and !$stop->{epoch_timestamp}){
         warn "Missing stop timestamp in transaction: ",JSON->new->canonical->pretty->encode($c),"\n";
         next;
     }
@@ -167,25 +167,26 @@ foreach my $c (@tr){
                 $mv_start = $m_c;
             }
         }
-        if($c->{stop}[3]{meterStop} > $mv_start->[3]{meterValue}[0]{sampledValue}[0]{value}){
+        if($stop and $c->{stop}[3]{meterStop} > $mv_start->[3]{meterValue}[0]{sampledValue}[0]{value}){
             $ch_time += ($stop->{epoch_timestamp} - $mv_start->[4]{epoch_timestamp});
         }
     } else {
-        $ch_time = $stop->{epoch_timestamp} - $start->{epoch_timestamp};
+        $ch_time = ($stop->{epoch_timestamp}//0) - $start->{epoch_timestamp};
     }
 
-    my $ocpp_mv_consumed = ($c->{stop}[3]{meterStop}//0) - ($c->{start}[3]{meterStart}//0);
+    my $ocpp_mv_consumed = ($c->{stop}[3]{meterStop}//$mv[-1][3]{meterValue}[0]{sampledValue}[0]{value}//0) - ($c->{start}[3]{meterStart}//0);
+    my $stop_time = $stop->{epoch_timestamp} // 0;
     printf("%s,%s,%s,%d,%d,%s,%d,%d,%d,%f,%f\n",
-        $stop->{file},
+        $start->{file},
         POSIX::strftime("%F %T", gmtime($start->{epoch_timestamp})),
-        POSIX::strftime("%F %T", gmtime($stop->{epoch_timestamp})),
-        ($stop->{epoch_timestamp} - $start->{epoch_timestamp}),
+        POSIX::strftime("%F %T", gmtime($stop_time)),
+        $stop_time?($stop_time - $start->{epoch_timestamp}):0,
         $ch_time,
-        $c->{stop}[3]{idTag}          // '',
+        $c->{start}[3]{idTag}         // '',
         $c->{start}[3]{meterStart}    // 0,
         $c->{stop}[3]{meterStop}      // 0,
         $ocpp_mv_consumed/1000,
-        ($stop->{external_meter_value}//0) - ($start->{external_meter_value} // 0),
+        ($stop->{external_meter_value}//($mv[-1]//[])->[4]{external_meter_value}//0) - ($start->{external_meter_value}//0),
         11.2222*($ch_time / 60 / 60),
     );
 }
