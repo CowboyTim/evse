@@ -55,14 +55,13 @@ foreach my $file (@ocpp_files){
     while(my $line = <$fh>){
         chomp $line;
         print STDERR "LINE: $line\n" if $ENV{DEBUG};
-        if($line =~ m/^(\[.*\])(?:,(.*?),(.*?))?$/){
-            my $ocpp_message   = $1;
+        if($line =~ m/^(\[.*\])(?:,(.*?)(?:,(:?.*?))?)?$/){
+            my $ocpp_message = $1;
             unless(length($ocpp_message//'')){
                 warn "${lf_info}Empty OCPP message in line: $line\n";
                 next;
             }
             my $meter_value    = $2 // '';
-            my $consumed_value = $3 // '';
             my $ocpp_message_json = eval {JSON::decode_json($ocpp_message)};
             if($@ or !$ocpp_message_json){
                 warn "${lf_info}Failed to decode JSON: $@ in line: $line\n";
@@ -78,8 +77,7 @@ foreach my $file (@ocpp_files){
             # our extra info
             my $ev = $ocpp_message_json->[4] = {};
             $ev->{file}                 = $file =~ s/\Q$base_dir\///gr;
-            $ev->{external_meter_value} = $meter_value     if $meter_value;
-            $ev->{consumed_meter_value} = $consumed_value  if $consumed_value;
+            $ev->{external_meter_value} = $meter_value if $meter_value;
             $ev->{line}                 = $line;
 
             my $tr_id = $message_data->{transactionId} // '';
