@@ -174,7 +174,16 @@ foreach my $c (@tr){
         $ch_time = ($stop->{epoch_timestamp}//0) - $start->{epoch_timestamp};
     }
 
-    my $ocpp_mv_consumed = ($c->{stop}[3]{meterStop}//$mv[-1][3]{meterValue}[0]{sampledValue}[0]{value}//0) - ($c->{start}[3]{meterStart}//0);
+    my $ocpp_mv_consumed = ($c->{stop}[3]{meterStop}//$mv[-1][3]{meterValue}[0]{sampledValue}[0]{value}//0)
+        - ($c->{start}[3]{meterStart}//0);
+    $ocpp_mv_consumed //= 0;
+    $ocpp_mv_consumed  /= 1000;
+    my $external_mv_consumed =
+        ($stop->{external_meter_value}
+        //($mv[-1]//[])->[4]{external_meter_value}
+        //0)
+        - ($start->{external_meter_value}//0);
+    $external_mv_consumed //= 0;
     my $stop_time = $stop->{epoch_timestamp} // 0;
     printf("%s,%s,%s,%d,%d,%s,%d,%d,%d,%f,%f\n",
         $start->{file},
@@ -185,8 +194,8 @@ foreach my $c (@tr){
         $c->{start}[3]{idTag}         // '',
         $c->{start}[3]{meterStart}    // 0,
         $c->{stop}[3]{meterStop}      // 0,
-        $ocpp_mv_consumed/1000,
-        ($stop->{external_meter_value}//($mv[-1]//[])->[4]{external_meter_value}//0) - ($start->{external_meter_value}//0),
-        10.2*($ch_time / 60 / 60),
+        $ocpp_mv_consumed,
+        $external_mv_consumed,
+        ($external_mv_consumed?$external_mv_consumed: $ocpp_mv_consumed)/$ocpp_mv_consumed,
     );
 }
