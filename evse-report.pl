@@ -30,7 +30,11 @@ use strict; use warnings;
 
 # we give a base dir as option to the script
 
-use JSON;
+BEGIN {
+    unshift @INC, $0 =~ s/\/[^\/]*$//gr;
+}
+
+use JSON::XS;
 use POSIX ();
 
 BEGIN {
@@ -41,19 +45,23 @@ $ENV{TZ} = 'GMT';
 POSIX::tzset();
 
 my $base_dir = shift @ARGV or die "Usage: $0 <base_dir>\n";
-my @ocpp_files = glob("$base_dir/snoop_blinkcharging_*.log");
-die "problem getting files from $base_dir: $!\n" if $!;
+opendir(my $base_dir_fh, $base_dir)
+    or die "Problem opening $base_dir: $!\n";
 
 # loop over the files, collect start/stop transactions
 my %start_requests;
 my %transactions;
-foreach my $file (@ocpp_files){
+foreach my $f (readdir($base_dir_fh)){
+    next unless $f =~ m/^snoop_blinkcharging_.*\.log$/;
+    my $file = "$base_dir/$f";
     open(my $fh, '<', $file)
         or do {warn "Could not open '$file': $!\n"; next;};
     my $base_fn = $file =~ s/.*\/+//gr;
     my $lf_info = "[$base_fn] ";
     while(my $line = <$fh>){
         chomp $line;
+        print STDERR "LINE? $line\n" if $ENV{DEBUG};
+        next if $line =~ m/(Heartbeat|currentTime)/; # faster
         print STDERR "LINE: $line\n" if $ENV{DEBUG};
         if($line =~ m/^(\[.*\])(?:,(.*?)(?:,(:?.*?))?)?$/){
             my $ocpp_message = $1;
@@ -62,7 +70,7 @@ foreach my $file (@ocpp_files){
                 next;
             }
             my $meter_value    = $2 // '';
-            my $ocpp_message_json = eval {JSON::decode_json($ocpp_message)};
+            my $ocpp_message_json = eval {JSON::XS::decode_json($ocpp_message)};
             if($@ or !$ocpp_message_json){
                 warn "${lf_info}Failed to decode JSON: $@ in line: $line\n";
                 next;
@@ -120,6 +128,7 @@ foreach my $file (@ocpp_files){
     }
     close($fh);
 }
+closedir($base_dir_fh);
 
 sub parse_date {
     # Convert the date string to epoch time
