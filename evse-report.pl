@@ -45,15 +45,23 @@ $ENV{TZ} = 'GMT';
 POSIX::tzset();
 
 my $base_dir = shift @ARGV or die "Usage: $0 <base_dir>\n";
-opendir(my $base_dir_fh, $base_dir)
-    or die "Problem opening $base_dir: $!\n";
 
 # loop over the files, collect start/stop transactions
+my @all_files = do {
+    opendir(my $base_dir_fh, $base_dir)
+        or die "Problem opening $base_dir: $!\n";
+    my %all_files;
+    foreach my $f (readdir($base_dir_fh)){
+        next unless $f =~ m/^snoop_blinkcharging_(\d+-\d+-\d+)\.log$/;
+        $all_files{parse_date("$1T00:00:00Z")} = "$base_dir/$f";
+    }
+    closedir($base_dir_fh);
+    map {$all_files{$_}} sort {$a <=> $b} keys %all_files;
+};
+
 my %start_requests;
 my %transactions;
-foreach my $f (readdir($base_dir_fh)){
-    next unless $f =~ m/^snoop_blinkcharging_.*\.log$/;
-    my $file = "$base_dir/$f";
+foreach my $file (@all_files){
     open(my $fh, '<', $file)
         or do {warn "Could not open '$file': $!\n"; next;};
     my $base_fn = $file =~ s/.*\/+//gr;
@@ -69,7 +77,7 @@ foreach my $f (readdir($base_dir_fh)){
                 warn "${lf_info}Empty OCPP message in line: $line\n";
                 next;
             }
-            my $meter_value    = $2 // '';
+            my $meter_value = $2 // '';
             my $ocpp_message_json = eval {JSON::XS::decode_json($ocpp_message)};
             if($@ or !$ocpp_message_json){
                 warn "${lf_info}Failed to decode JSON: $@ in line: $line\n";
@@ -81,30 +89,40 @@ foreach my $f (readdir($base_dir_fh)){
             my $message_id   = $ocpp_message_json->[1];
             my $message_name = $ocpp_message_json->[2];
             my $message_data = $ocpp_message_json->[3] // $message_name;
+            my $tr_id = $message_data->{transactionId};
+            my $ms_ts = $message_data->{timestamp}     // '';
 
             # our extra info
             my $ev = $ocpp_message_json->[4] = {};
             $ev->{file}                 = $file =~ s/\Q$base_dir\///gr;
             $ev->{external_meter_value} = $meter_value if $meter_value;
             $ev->{line}                 = $line;
+            $ev->{transaction_id}       = $tr_id if $tr_id;
 
-            my $tr_id = $message_data->{transactionId} // '';
-            my $ms_ts = $message_data->{timestamp} // '';
+            if($message_type eq "2" and $message_name eq 'BootNotification' and $message_id eq "1"){
+                %start_requests = ();
+                next;
+            }
 
             # what we do with the message
-            if($message_type ==2 and $message_name eq 'StartTransaction'){
+            if($message_type eq "2" and $message_name eq 'StartTransaction'){
+                my $id_tag = $message_data->{idTag};
+                print STDERR "START $id_tag/$message_id : $line\n" if $ENV{DEBUG};
                 $ev->{epoch_timestamp} = parse_date($ms_ts);
                 if(!defined $ev->{epoch_timestamp}){
                     warn "${lf_info}Failed to parse timestamp '$ms_ts' in line: $line\n";
                     next;
                 }
                 # Store the start transaction data
-                $start_requests{$message_id} //= $ocpp_message_json;
+                $start_requests{$id_tag.'/'.$message_id} //= $ocpp_message_json;
             }
-            elsif($message_type == 3 and $tr_id){
-                $transactions{$tr_id}{start} //= delete $start_requests{$message_id};
+            elsif($message_type eq "3" and $tr_id){
+                my $id_tag = $ocpp_message_json->[2]{idTagInfo}{parentIdTag};
+                print STDERR "TRANSACTION $id_tag/$message_id : $line\n" if $ENV{DEBUG};
+                my $l_ev = $transactions{$tr_id}{start} //= delete $start_requests{$id_tag.'/'.$message_id};
+                $l_ev->[4]{transaction_id} //= $tr_id;
             }
-            elsif($message_type == 2 and $message_name eq 'StopTransaction'){
+            elsif($message_type eq "2" and $message_name eq 'StopTransaction' and $tr_id){
                 $ev->{epoch_timestamp} = parse_date($ms_ts);
                 if(!defined $ev->{epoch_timestamp}){
                     warn "${lf_info}Failed to parse timestamp '$ms_ts' in line: $line\n";
@@ -113,7 +131,7 @@ foreach my $f (readdir($base_dir_fh)){
                 # Update the stop transaction data
                 $transactions{$tr_id}{stop} //= $ocpp_message_json;
             }
-            elsif($message_type == 2 and $message_name eq 'MeterValues'){
+            elsif($message_type eq "2" and $message_name eq 'MeterValues' and $tr_id){
                 my $mv_ts = $message_data->{meterValue}[0]{timestamp} // '';
                 $ev->{epoch_timestamp} = parse_date($mv_ts);
                 if(!defined $ev->{epoch_timestamp}){
@@ -128,7 +146,8 @@ foreach my $f (readdir($base_dir_fh)){
     }
     close($fh);
 }
-closedir($base_dir_fh);
+
+%start_requests = ();
 
 sub parse_date {
     # Convert the date string to epoch time
@@ -144,7 +163,7 @@ sub parse_date {
 my @tr = (sort {($a->{start}[4]{epoch_timestamp}//0) <=> ($b->{start}[4]{epoch_timestamp}//0)}
             grep {$_->{start}} values %transactions);
 
-print STDERR JSON->new->canonical->encode(\@tr),"\n" if $ENV{DEBUG};
+print STDERR JSON::XS->new->canonical->encode(\@tr),"\n" if $ENV{DEBUG} and $ENV{DUMP};
 
 foreach my $c (@tr){
     my $start = $c->{start}[4];
@@ -161,6 +180,7 @@ foreach my $c (@tr){
     my $ch_time = 0;
     my @mv = sort {$a->[4]{epoch_timestamp} <=> $b->[4]{epoch_timestamp}} @{$c->{meter_values} // []};
     if(@mv){
+        print STDERR "$c->{start}[4]{transaction_id} has metervalues\n" if $ENV{DEBUG};
         my $mv_start = $mv[0]   // {};
         my $mv_stop  = $mv[-1]  // {};
         if(!$mv_start->[4]{epoch_timestamp} or !$mv_stop->[4]{epoch_timestamp}){
@@ -180,11 +200,24 @@ foreach my $c (@tr){
             $ch_time += ($stop->{epoch_timestamp} - $mv_start->[4]{epoch_timestamp});
         }
     } else {
-        $ch_time = ($stop->{epoch_timestamp}//0) - $start->{epoch_timestamp};
+        if($stop->{epoch_timestamp}){
+            $ch_time = ($stop->{epoch_timestamp}//0) - $start->{epoch_timestamp};
+        } else {
+            next;
+        }
     }
 
-    my $ocpp_mv_consumed = ($c->{stop}[3]{meterStop}//$mv[-1][3]{meterValue}[0]{sampledValue}[0]{value}//0)
-        - ($c->{start}[3]{meterStart}//0);
+    my $meter_stop  = $c->{stop}[3]{meterStop}   // 0;
+    my $meter_start = $c->{start}[3]{meterStart} // 0;
+    my $ocpp_mv_consumed = $meter_stop;
+    if(!$ocpp_mv_consumed){
+        if(@mv){
+            $ocpp_mv_consumed = $mv[-1][3]{meterValue}[0]{sampledValue}[0]{value} // 0;
+        } else {
+            $ocpp_mv_consumed = $meter_start;
+        }
+    }
+    $ocpp_mv_consumed -= $meter_start;
     $ocpp_mv_consumed //= 0;
     $ocpp_mv_consumed  /= 1000;
     my $external_mv_consumed =
@@ -194,17 +227,22 @@ foreach my $c (@tr){
         - ($start->{external_meter_value}//0);
     $external_mv_consumed //= 0;
     my $stop_time = $stop->{epoch_timestamp} // 0;
-    printf("%s,%s,%s,%d,%d,%s,%d,%d,%d,%f,%f\n",
+    printf("%s,%s,%s,%d,%d,%s,%s,%d,%d,%d,%f,%f\n",
         $start->{file},
         POSIX::strftime("%F %T", gmtime($start->{epoch_timestamp})),
         POSIX::strftime("%F %T", gmtime($stop_time)),
         $stop_time?($stop_time - $start->{epoch_timestamp}):0,
         $ch_time,
-        $c->{start}[3]{idTag}         // '',
-        $c->{start}[3]{meterStart}    // 0,
-        $c->{stop}[3]{meterStop}      // 0,
+        $c->{start}[3]{idTag}          // '',
+        $c->{start}[4]{transaction_id} // '',
+        $meter_start,
+        $meter_stop,
         $ocpp_mv_consumed,
         $external_mv_consumed,
-        ($external_mv_consumed?$external_mv_consumed: $ocpp_mv_consumed)/$ocpp_mv_consumed,
+        $ocpp_mv_consumed?(
+            ($external_mv_consumed?
+                $external_mv_consumed:
+                $ocpp_mv_consumed)/$ocpp_mv_consumed
+        ):0,
     );
 }
