@@ -192,26 +192,28 @@ foreach my $c (@tr){
             next;
         }
         # now sorted, compare, and if a change in meterValue, add to charge time
+        my $in_start = $mv_start->[4]{epoch_timestamp} - $start->{epoch_timestamp};
         my $mv_c = $mv_start->[3]{meterValue}[0]{sampledValue}[0]{value} // 0;
         if($mv_c > $meter_start){
-            $ch_time += ($mv_start->[4]{epoch_timestamp} - $start->{epoch_timestamp});
+            $ch_time = $in_start;
         }
-        $pa_time  = $ch_time;
+        $pa_time = $in_start;
         foreach my $m_c (@mv){
             my $d_time = $m_c->[4]{epoch_timestamp} - $mv_start->[4]{epoch_timestamp};
             $pa_time += $d_time;
             $mv_c = $m_c->[3]{meterValue}[0]{sampledValue}[0]{value} // 0;
             if($mv_c > $mv_start->[3]{meterValue}[0]{sampledValue}[0]{value}){
                 $ch_time += $d_time;
-                $mv_start = $m_c;
             }
+            $mv_start = $m_c;
         }
         if($stop and $c->{stop}[3]{meterStop} > $mv_start->[3]{meterValue}[0]{sampledValue}[0]{value}){
-            $ch_time += ($stop->{epoch_timestamp} - $mv_start->[4]{epoch_timestamp});
+            $ch_time += $stop->{epoch_timestamp} - $mv_start->[4]{epoch_timestamp};
         }
     } else {
         if($stop->{epoch_timestamp}){
             $ch_time = ($stop->{epoch_timestamp}//0) - $start->{epoch_timestamp};
+            $pa_time = $ch_time;
         } else {
             next;
         }
