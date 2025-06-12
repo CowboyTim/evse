@@ -177,8 +177,12 @@ foreach my $c (@tr){
         next;
     }
 
+    my $meter_stop  = $c->{stop}[3]{meterStop}   // 0;
+    my $meter_start = $c->{start}[3]{meterStart} // 0;
+    my $pa_time = 0;
     my $ch_time = 0;
-    my @mv = sort {$a->[4]{epoch_timestamp} <=> $b->[4]{epoch_timestamp}} @{$c->{meter_values} // []};
+    my %uniq;
+    my @mv = sort {$a->[4]{epoch_timestamp} <=> $b->[4]{epoch_timestamp}} grep {!$uniq{$_->[4]{epoch_timestamp}}++} @{$c->{meter_values} // []};
     if(@mv){
         print STDERR "$c->{start}[4]{transaction_id} has metervalues\n" if $ENV{DEBUG};
         my $mv_start = $mv[0]   // {};
@@ -188,11 +192,17 @@ foreach my $c (@tr){
             next;
         }
         # now sorted, compare, and if a change in meterValue, add to charge time
-        $ch_time += ($mv_start->[4]{epoch_timestamp} - $start->{epoch_timestamp});
+        my $mv_c = $mv_start->[3]{meterValue}[0]{sampledValue}[0]{value} // 0;
+        if($mv_c > $meter_start){
+            $ch_time += ($mv_start->[4]{epoch_timestamp} - $start->{epoch_timestamp});
+        }
+        $pa_time  = $ch_time;
         foreach my $m_c (@mv){
-            my $mv_c = $m_c->[3]{meterValue}[0]{sampledValue}[0]{value} // 0;
+            my $d_time = $m_c->[4]{epoch_timestamp} - $mv_start->[4]{epoch_timestamp};
+            $pa_time += $d_time;
+            $mv_c = $m_c->[3]{meterValue}[0]{sampledValue}[0]{value} // 0;
             if($mv_c > $mv_start->[3]{meterValue}[0]{sampledValue}[0]{value}){
-                $ch_time += ($m_c->[4]{epoch_timestamp} - $mv_start->[4]{epoch_timestamp});
+                $ch_time += $d_time;
                 $mv_start = $m_c;
             }
         }
@@ -207,8 +217,6 @@ foreach my $c (@tr){
         }
     }
 
-    my $meter_stop  = $c->{stop}[3]{meterStop}   // 0;
-    my $meter_start = $c->{start}[3]{meterStart} // 0;
     my $ocpp_mv_consumed = $meter_stop;
     if(!$ocpp_mv_consumed){
         if(@mv){
@@ -227,12 +235,13 @@ foreach my $c (@tr){
         - ($start->{external_meter_value}//0);
     $external_mv_consumed //= 0;
     my $stop_time = $stop->{epoch_timestamp} // 0;
-    printf("%s,%s,%s,%d,%d,%s,%s,%d,%d,%d,%f,%f\n",
+    printf("%s,%s,%s,%d,%d,%s,%s,%d,%d,%d,%d,%f,%f\n",
         $start->{file},
         POSIX::strftime("%F %T", gmtime($start->{epoch_timestamp})),
         POSIX::strftime("%F %T", gmtime($stop_time)),
         $stop_time?($stop_time - $start->{epoch_timestamp}):0,
         $ch_time,
+        $pa_time,
         $c->{start}[3]{idTag}          // '',
         $c->{start}[4]{transaction_id} // '',
         $meter_start,
