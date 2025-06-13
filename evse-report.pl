@@ -215,7 +215,7 @@ foreach my $c (@tr){
             $ch_time = ($stop->{epoch_timestamp}//0) - $start->{epoch_timestamp};
             $pa_time = $ch_time;
         } else {
-            next;
+            #next;
         }
     }
 
@@ -249,7 +249,7 @@ foreach my $c (@tr){
         $meter_start,
         $meter_stop,
         $ocpp_mv_consumed,
-        $external_mv_consumed,
+        $external_mv_consumed > 0 ? $external_mv_consumed : 0,
         $ocpp_mv_consumed?(
             ($external_mv_consumed?
                 $external_mv_consumed:
