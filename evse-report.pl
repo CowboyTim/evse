@@ -195,6 +195,7 @@ foreach my $c (@tr){
         my $in_start = $mv_start->[4]{epoch_timestamp} - $start->{epoch_timestamp};
         my $mv_c = $mv_start->[3]{meterValue}[0]{sampledValue}[0]{value} // 0;
         if($mv_c > $meter_start){
+            print STDERR "$mv_start->[4]{epoch_timestamp} - $start->{epoch_timestamp} = $in_start\n" if $ENV{DEBUG};
             $ch_time = $in_start;
         }
         $pa_time = $in_start;
@@ -229,7 +230,7 @@ foreach my $c (@tr){
     }
     $ocpp_mv_consumed -= $meter_start;
     $ocpp_mv_consumed //= 0;
-    $ocpp_mv_consumed  /= 1000;
+    $ocpp_mv_consumed  /= 1000.0;
     my $external_mv_consumed =
         ($stop->{external_meter_value}
         //($mv[-1]//[])->[4]{external_meter_value}
@@ -237,7 +238,7 @@ foreach my $c (@tr){
         - ($start->{external_meter_value}//0);
     $external_mv_consumed //= 0;
     my $stop_time = $stop->{epoch_timestamp} // 0;
-    printf("%s,%s,%s,%d,%d,%s,%s,%d,%d,%d,%d,%f,%f\n",
+    printf("%s,%s,%s,%d,%d,%s,%s,%d,%d,%d,%f,%f,%f\n",
         $start->{file},
         POSIX::strftime("%F %T", gmtime($start->{epoch_timestamp})),
         POSIX::strftime("%F %T", gmtime($stop_time)),
